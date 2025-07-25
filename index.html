@@ -1,0 +1,587 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Plus, Trash2, Share2, FileText, X, ChevronDown, ChevronUp, Users, FilePlus, List, Loader } from 'lucide-react';
+
+// MOCKデータ (初回起動時用)
+const initialClients = [
+    { id: 1, name: '株式会社A&W沖縄' },
+    { id: 2, name: 'ブルーシール株式会社' },
+    { id: 3, name: '合資会社 Jimmy\'s' },
+];
+
+const initialSlips = [
+    {
+        id: '20250726-001',
+        clientId: 1,
+        date: '2025-07-26',
+        items: [
+            { name: 'ルートビア 355ml缶', code: 'RB-CAN-355', quantity: 24, unit: '本', price: 120 },
+            { name: 'カーリーフライ (冷凍)', code: 'CF-FRZ-1KG', quantity: 10, unit: '袋', price: 800 },
+        ],
+        total: 24 * 120 + 10 * 800,
+    },
+    {
+        id: '20250725-001',
+        clientId: 2,
+        date: '2025-07-25',
+        items: [
+            { name: 'バニラアイスクリーム 4L', code: 'IC-VNL-4L', quantity: 5, unit: '個', price: 2500 },
+        ],
+        total: 5 * 2500,
+    },
+];
+
+// ヘルパー関数: 今日の日付をYYYY-MM-DD形式で取得
+const getTodayDate = () => {
+    const today = new Date();
+    today.setHours(today.getHours() + 9); // JSTに調整
+    return today.toISOString().split('T')[0];
+};
+
+
+// PDFテンプレートコンポーネント
+const PdfTemplate = React.forwardRef(({ slip, client }, ref) => {
+    if (!slip || !client) return null;
+
+    const slipTotal = slip.items.reduce((acc, item) => acc + item.quantity * item.price, 0);
+
+    return (
+        <div ref={ref} className="p-8 bg-white text-black" style={{ width: '210mm', minHeight: '297mm' }}>
+            <div className="border-2 border-black p-4">
+                <header className="flex justify-between items-start mb-4">
+                    <div>
+                        <h1 className="text-3xl font-bold">納品書</h1>
+                        <p className="text-sm mt-2">（控）</p>
+                    </div>
+                    <div className="text-right">
+                        <p>No. {slip.id}</p>
+                        <p>年月日: {slip.date}</p>
+                    </div>
+                </header>
+
+                <div className="mb-4 pb-2 border-b-2 border-black">
+                    <h2 className="text-xl font-bold">{client.name} 御中</h2>
+                </div>
+
+                <div className="flex justify-end mb-4">
+                    <div className="text-center border-2 border-black p-2">
+                        <p className="font-bold">株式会社サンブランド</p>
+                        <p className="text-xs">〒904-0314 沖縄県中頭郡読谷村字楚辺1丁目3-4</p>
+                        <p className="text-xs">TEL: (098) 936-7136 / FAX: (098) 936-7136</p>
+                    </div>
+                </div>
+
+                <table className="w-full border-collapse border border-black text-sm">
+                    <thead>
+                        <tr>
+                            <th className="border border-black p-2 w-2/5">品名</th>
+                            <th className="border border-black p-2 w-1/5">コード</th>
+                            <th className="border border-black p-2 w-1/12">数量</th>
+                            <th className="border border-black p-2 w-1/12">単位</th>
+                            <th className="border border-black p-2 w-1/6">単価</th>
+                            <th className="border border-black p-2 w-1/6">金額</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {slip.items.map((item, index) => (
+                            <tr key={index}>
+                                <td className="border border-black p-2">{item.name}</td>
+                                <td className="border border-black p-2">{item.code}</td>
+                                <td className="border border-black p-2 text-right">{item.quantity.toLocaleString()}</td>
+                                <td className="border border-black p-2">{item.unit}</td>
+                                <td className="border border-black p-2 text-right">{item.price.toLocaleString()}</td>
+                                <td className="border border-black p-2 text-right">{(item.quantity * item.price).toLocaleString()}</td>
+                            </tr>
+                        ))}
+                        {/* 空白行を追加して高さを確保 */}
+                        {Array.from({ length: 10 - slip.items.length }).map((_, i) => (
+                             <tr key={`blank-${i}`}><td className="border border-black p-2 h-8" colSpan="6"></td></tr>
+                        ))}
+                    </tbody>
+                </table>
+
+                <div className="flex justify-end mt-4">
+                    <div className="w-1/3">
+                        <table className="w-full border-collapse border border-black text-sm">
+                            <tbody>
+                                <tr>
+                                    <th className="border border-black p-2">合計金額</th>
+                                    <td className="border border-black p-2 text-right text-lg font-bold">¥ {slipTotal.toLocaleString()}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div className="mt-4 border border-black p-2 text-xs">
+                    <p>※ 本納品書をもちまして、上記商品を正に納品いたしました。</p>
+                </div>
+            </div>
+        </div>
+    );
+});
+
+// モーダルコンポーネント
+function Modal({ isOpen, message, onConfirm, onCancel }) {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+            <div className="bg-gray-800 rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl">
+                <p className="text-white mb-6">{message}</p>
+                <div className="flex justify-end gap-3">
+                    <button onClick={onCancel} className="py-2 px-4 bg-gray-600 rounded-md hover:bg-gray-500 font-semibold">
+                        {onConfirm ? 'キャンセル' : '閉じる'}
+                    </button>
+                    {onConfirm && (
+                        <button onClick={onConfirm} className="py-2 px-4 bg-cyan-600 rounded-md hover:bg-cyan-500 font-semibold">
+                            OK
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// メインのAppコンポーネント
+export default function App() {
+    const [clients, setClients] = useState([]);
+    const [slips, setSlips] = useState([]);
+    const [activeClientId, setActiveClientId] = useState(null);
+    const [view, setView] = useState('list'); // 'list', 'form', 'clients'
+    const [slipToEdit, setSlipToEdit] = useState(null);
+    const [slipToShare, setSlipToShare] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [modal, setModal] = useState({ isOpen: false, message: '', onConfirm: null });
+    const [scriptsReady, setScriptsReady] = useState(false);
+    const pdfRef = useRef();
+
+    // 外部スクリプト読み込み
+    useEffect(() => {
+        const loadScript = (src, onReady) => {
+            let script = document.querySelector(`script[src="${src}"]`);
+            if (!script) {
+                script = document.createElement('script');
+                script.src = src;
+                script.async = true;
+                document.body.appendChild(script);
+                script.onload = onReady;
+                script.onerror = () => console.error(`Failed to load script: ${src}`);
+            } else if (script.getAttribute('data-loaded')) {
+                onReady();
+            } else {
+                script.addEventListener('load', onReady);
+            }
+        };
+
+        let loadedCount = 0;
+        const totalScripts = 2;
+        const onScriptReady = (e) => {
+            e.target.setAttribute('data-loaded', 'true');
+            loadedCount++;
+            if (loadedCount === totalScripts) {
+                setScriptsReady(true);
+                console.log('All PDF scripts loaded.');
+            }
+        };
+        
+        loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', onScriptReady);
+        loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', onScriptReady);
+    }, []);
+
+    // データ初期化
+    useEffect(() => {
+        try {
+            const storedClients = localStorage.getItem('nohinsho_clients');
+            const storedSlips = localStorage.getItem('nohinsho_slips');
+
+            if (storedClients) {
+                setClients(JSON.parse(storedClients));
+            } else {
+                setClients(initialClients);
+            }
+
+            if (storedSlips) {
+                setSlips(JSON.parse(storedSlips));
+            } else {
+                setSlips(initialSlips);
+            }
+        } catch (error) {
+            console.error("データの読み込みに失敗しました:", error);
+            setClients(initialClients);
+            setSlips(initialSlips);
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+    
+    // activeClientIdの初期設定
+    useEffect(() => {
+        if (clients.length > 0 && !activeClientId) {
+            setActiveClientId(clients[0].id);
+        }
+    }, [clients, activeClientId]);
+
+    // データ永続化
+    useEffect(() => {
+        if (!isLoading) {
+            localStorage.setItem('nohinsho_clients', JSON.stringify(clients));
+        }
+    }, [clients, isLoading]);
+
+    useEffect(() => {
+        if (!isLoading) {
+            localStorage.setItem('nohinsho_slips', JSON.stringify(slips));
+        }
+    }, [slips, isLoading]);
+
+    const handleAddSlip = () => {
+        setSlipToEdit(null);
+        setView('form');
+    };
+
+    const handleEditSlip = (slip) => {
+        setSlipToEdit(slip);
+        setView('form');
+    };
+
+    const handleDeleteSlip = (slipId) => {
+        setModal({
+            isOpen: true,
+            message: 'この納品書を本当に削除しますか？',
+            onConfirm: () => {
+                setSlips(slips.filter(s => s.id !== slipId));
+                setModal({ isOpen: false });
+            }
+        });
+    };
+
+    const handleSaveSlip = (slipData) => {
+        if (slipToEdit) {
+            setSlips(slips.map(s => s.id === slipData.id ? slipData : s));
+        } else {
+            setSlips([slipData, ...slips]);
+        }
+        setView('list');
+    };
+
+    const handleShareSlip = async (slip) => {
+        if (!scriptsReady) {
+            setModal({ isOpen: true, message: 'PDF生成ライブラリを読み込み中です。しばらくしてからもう一度お試しください。' });
+            return;
+        }
+
+        setSlipToShare(slip);
+        setTimeout(async () => {
+            if (!pdfRef.current) {
+                console.error("PDFコンポーネントがありません。");
+                return;
+            }
+            try {
+                const { jsPDF } = window.jspdf;
+                const html2canvas = window.html2canvas;
+
+                const canvas = await html2canvas(pdfRef.current, { scale: 2 });
+                const imgData = canvas.toDataURL('image/png');
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                const pdfWidth = pdf.internal.pageSize.getWidth();
+                const pdfHeight = pdf.internal.pageSize.getHeight();
+                pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+                
+                const pdfBlob = pdf.getBlob();
+                const pdfFile = new File([pdfBlob], `納品書_${slip.id}.pdf`, { type: 'application/pdf' });
+
+                if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+                    await navigator.share({
+                        title: `納品書 ${slip.id}`,
+                        text: `${clients.find(c => c.id === slip.clientId)?.name}様への納品書です。`,
+                        files: [pdfFile],
+                    });
+                } else {
+                    const downloadUrl = URL.createObjectURL(pdfBlob);
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = `納品書_${slip.id}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    setModal({ isOpen: true, message: 'お使いのブラウザは共有機能に対応していません。PDFをダウンロードしました。' });
+                }
+            } catch (error) {
+                console.error('PDFの生成または共有に失敗しました:', error);
+                setModal({ isOpen: true, message: 'PDFの生成または共有に失敗しました。' });
+            } finally {
+                setSlipToShare(null);
+            }
+        }, 100);
+    };
+    
+    const filteredSlips = slips.filter(s => s.clientId === activeClientId);
+
+    if (isLoading) {
+        return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader className="animate-spin mr-2" /> Loading...</div>;
+    }
+
+    return (
+        <div className="bg-gray-900 text-white min-h-screen font-sans">
+             <Modal 
+                isOpen={modal.isOpen} 
+                message={modal.message} 
+                onConfirm={modal.onConfirm} 
+                onCancel={() => setModal({ isOpen: false })} 
+            />
+            <div className="container mx-auto max-w-4xl p-4">
+                <header className="flex justify-between items-center mb-4">
+                    <h1 className="text-2xl font-bold text-cyan-400">納品書管理</h1>
+                    <div className="flex gap-2">
+                        <button onClick={() => setView('clients')} className="p-2 bg-gray-700 rounded-full hover:bg-gray-600"><Users size={20} /></button>
+                        <button onClick={() => setView('list')} className="p-2 bg-gray-700 rounded-full hover:bg-gray-600"><List size={20} /></button>
+                        <button onClick={handleAddSlip} className="p-2 bg-cyan-500 rounded-full hover:bg-cyan-400"><FilePlus size={20} /></button>
+                    </div>
+                </header>
+
+                {view === 'list' && (
+                    <ClientTabs clients={clients} activeClientId={activeClientId} setActiveClientId={setActiveClientId} />
+                )}
+
+                <main>
+                    {view === 'list' && <DeliverySlipList slips={filteredSlips} onEdit={handleEditSlip} onDelete={handleDeleteSlip} onShare={handleShareSlip} scriptsReady={scriptsReady} />}
+                    {view === 'form' && <DeliverySlipForm clients={clients} activeClientId={activeClientId} onSave={handleSaveSlip} onCancel={() => setView('list')} slipToEdit={slipToEdit} slips={slips} />}
+                    {view === 'clients' && <ClientManager clients={clients} setClients={setClients} setModal={setModal} />}
+                </main>
+            </div>
+            <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
+                <PdfTemplate ref={pdfRef} slip={slipToShare} client={clients.find(c => c.id === slipToShare?.clientId)} />
+            </div>
+        </div>
+    );
+}
+
+// 取引先タブコンポーネント
+function ClientTabs({ clients, activeClientId, setActiveClientId }) {
+    if (!clients || clients.length === 0) {
+        return <div className="text-center p-4 bg-gray-800 rounded-lg">取引先が登録されていません。</div>;
+    }
+    return (
+        <div className="mb-4 overflow-x-auto whitespace-nowrap pb-2">
+            {clients.map(client => (
+                <button
+                    key={client.id}
+                    onClick={() => setActiveClientId(client.id)}
+                    className={`px-4 py-2 mr-2 rounded-full text-sm font-semibold ${activeClientId === client.id ? 'bg-cyan-500 text-white' : 'bg-gray-700 text-gray-300'}`}
+                >
+                    {client.name}
+                </button>
+            ))}
+        </div>
+    );
+}
+
+// 納品書リストコンポーネント
+function DeliverySlipList({ slips, onEdit, onDelete, onShare, scriptsReady }) {
+    const [expandedSlip, setExpandedSlip] = useState(null);
+
+    const toggleExpand = (id) => {
+        setExpandedSlip(expandedSlip === id ? null : id);
+    };
+
+    if (slips.length === 0) {
+        return <div className="text-center p-8 bg-gray-800 rounded-lg">この取引先の納品書はありません。</div>;
+    }
+
+    return (
+        <div className="space-y-3">
+            {slips.sort((a, b) => new Date(b.date) - new Date(a.date)).map(slip => (
+                <div key={slip.id} className="bg-gray-800 rounded-lg p-4 shadow-md">
+                    <div className="flex justify-between items-center cursor-pointer" onClick={() => toggleExpand(slip.id)}>
+                        <div>
+                            <p className="font-bold">{slip.date}</p>
+                            <p className="text-sm text-gray-400">No: {slip.id}</p>
+                        </div>
+                        <div className="text-right">
+                            <p className="font-bold text-lg text-cyan-400">¥{slip.total.toLocaleString()}</p>
+                            {expandedSlip === slip.id ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                        </div>
+                    </div>
+                    {expandedSlip === slip.id && (
+                        <div className="mt-4 pt-4 border-t border-gray-700">
+                            <h4 className="font-semibold mb-2">品目:</h4>
+                            <ul className="space-y-1 text-sm">
+                                {slip.items.map((item, index) => (
+                                    <li key={index} className="flex justify-between">
+                                        <span>{item.name} ({item.quantity}{item.unit})</span>
+                                        <span>¥{(item.price * item.quantity).toLocaleString()}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                            <div className="flex justify-end gap-2 mt-4">
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); onShare(slip); }} 
+                                    className={`p-2 bg-green-600 rounded-full transition-opacity ${!scriptsReady ? 'opacity-50 cursor-not-allowed' : 'hover:bg-green-500'}`}
+                                    disabled={!scriptsReady}
+                                >
+                                    <Share2 size={16} />
+                                </button>
+                                <button onClick={(e) => { e.stopPropagation(); onEdit(slip); }} className="p-2 bg-blue-600 rounded-full hover:bg-blue-500"><FileText size={16} /></button>
+                                <button onClick={(e) => { e.stopPropagation(); onDelete(slip.id); }} className="p-2 bg-red-600 rounded-full hover:bg-red-500"><Trash2 size={16} /></button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            ))}
+        </div>
+    );
+}
+
+// 納品書作成・編集フォーム
+function DeliverySlipForm({ clients, activeClientId, onSave, onCancel, slipToEdit, slips }) {
+    const [date, setDate] = useState(getTodayDate());
+    const [clientId, setClientId] = useState(activeClientId);
+    const [items, setItems] = useState([{ name: '', code: '', quantity: '', unit: '個', price: '' }]);
+
+    useEffect(() => {
+        if (slipToEdit) {
+            setDate(slipToEdit.date);
+            setClientId(slipToEdit.clientId);
+            setItems(slipToEdit.items.map(item => ({ ...item })));
+        }
+    }, [slipToEdit]);
+
+    const handleItemChange = (index, field, value) => {
+        const newItems = [...items];
+        newItems[index][field] = value;
+        setItems(newItems);
+    };
+
+    const addItem = () => {
+        setItems([...items, { name: '', code: '', quantity: '', unit: '個', price: '' }]);
+    };
+
+    const removeItem = (index) => {
+        const newItems = items.filter((_, i) => i !== index);
+        setItems(newItems);
+    };
+
+    const handleSubmit = (e) => {
+        e.preventDefault();
+        const total = items.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.price) || 0), 0);
+        
+        let slipId;
+        if (slipToEdit) {
+            slipId = slipToEdit.id;
+        } else {
+            const today = getTodayDate().replace(/-/g, '');
+            const todaySlips = slips.filter(s => s.id.startsWith(today));
+            const newIndex = (todaySlips.length + 1).toString().padStart(3, '0');
+            slipId = `${today}-${newIndex}`;
+        }
+
+        onSave({
+            id: slipId,
+            clientId: Number(clientId),
+            date,
+            items: items.map(item => ({
+                ...item,
+                quantity: Number(item.quantity),
+                price: Number(item.price)
+            })).filter(item => item.name && item.quantity > 0 && item.price >= 0),
+            total
+        });
+    };
+
+    return (
+        <div className="bg-gray-800 p-4 rounded-lg">
+            <form onSubmit={handleSubmit} className="space-y-4">
+                <h2 className="text-xl font-bold mb-4">{slipToEdit ? '納品書編集' : '新規納品書作成'}</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-400">納入日</label>
+                        <input type="date" value={date} onChange={e => setDate(e.target.value)} className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm p-2" required />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-400">取引先</label>
+                        <select value={clientId} onChange={e => setClientId(e.target.value)} className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm p-2" required>
+                            {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                    </div>
+                </div>
+
+                <div className="space-y-3">
+                    <h3 className="font-semibold">品目</h3>
+                    {items.map((item, index) => (
+                        <div key={index} className="bg-gray-700 p-3 rounded-md space-y-2 relative">
+                            <button type="button" onClick={() => removeItem(index)} className="absolute top-2 right-2 text-red-400 hover:text-red-300"><X size={16} /></button>
+                            <input type="text" placeholder="品名" value={item.name} onChange={e => handleItemChange(index, 'name', e.target.value)} className="w-full bg-gray-600 p-2 rounded-md" required />
+                            <div className="grid grid-cols-2 gap-2">
+                                <input type="text" placeholder="コード" value={item.code} onChange={e => handleItemChange(index, 'code', e.target.value)} className="bg-gray-600 p-2 rounded-md" />
+                                <input type="text" placeholder="単位" value={item.unit} onChange={e => handleItemChange(index, 'unit', e.target.value)} className="bg-gray-600 p-2 rounded-md" required />
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <input type="number" placeholder="数量" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', e.target.value)} className="bg-gray-600 p-2 rounded-md" required />
+                                <input type="number" placeholder="単価" value={item.price} onChange={e => handleItemChange(index, 'price', e.target.value)} className="bg-gray-600 p-2 rounded-md" required />
+                            </div>
+                        </div>
+                    ))}
+                    <button type="button" onClick={addItem} className="w-full py-2 px-4 border border-dashed border-gray-500 text-gray-400 rounded-md hover:bg-gray-700">品目を追加</button>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4">
+                    <button type="button" onClick={onCancel} className="py-2 px-4 bg-gray-600 rounded-md hover:bg-gray-500">キャンセル</button>
+                    <button type="submit" className="py-2 px-4 bg-cyan-600 rounded-md hover:bg-cyan-500">保存</button>
+                </div>
+            </form>
+        </div>
+    );
+}
+
+// 取引先管理画面
+function ClientManager({ clients, setClients, setModal }) {
+    const [newClientName, setNewClientName] = useState('');
+
+    const handleAddClient = (e) => {
+        e.preventDefault();
+        if (newClientName.trim() === '') return;
+        const newClient = {
+            id: Date.now(),
+            name: newClientName.trim()
+        };
+        setClients([...clients, newClient]);
+        setNewClientName('');
+    };
+
+    const handleDeleteClient = (id) => {
+        setModal({
+            isOpen: true,
+            message: 'この取引先を削除しますか？関連する納品書は削除されません。',
+            onConfirm: () => {
+                setClients(clients.filter(c => c.id !== id));
+                setModal({ isOpen: false });
+            }
+        });
+    };
+
+    return (
+        <div className="bg-gray-800 p-4 rounded-lg">
+            <h2 className="text-xl font-bold mb-4">取引先管理</h2>
+            <form onSubmit={handleAddClient} className="flex gap-2 mb-4">
+                <input
+                    type="text"
+                    value={newClientName}
+                    onChange={(e) => setNewClientName(e.target.value)}
+                    placeholder="新しい取引先名"
+                    className="flex-grow bg-gray-700 border-gray-600 rounded-md shadow-sm p-2"
+                />
+                <button type="submit" className="py-2 px-4 bg-cyan-600 rounded-md hover:bg-cyan-500">追加</button>
+            </form>
+            <ul className="space-y-2">
+                {clients.map(client => (
+                    <li key={client.id} className="flex justify-between items-center bg-gray-700 p-3 rounded-md">
+                        <span>{client.name}</span>
+                        <button onClick={() => handleDeleteClient(client.id)} className="text-red-400 hover:text-red-300">
+                            <Trash2 size={18} />
+                        </button>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+}
