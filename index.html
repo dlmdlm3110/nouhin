@@ -1,587 +1,320 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Plus, Trash2, Share2, FileText, X, ChevronDown, ChevronUp, Users, FilePlus, List, Loader } from 'lucide-react';
-
-// MOCKデータ (初回起動時用)
-const initialClients = [
-    { id: 1, name: '株式会社A&W沖縄' },
-    { id: 2, name: 'ブルーシール株式会社' },
-    { id: 3, name: '合資会社 Jimmy\'s' },
-];
-
-const initialSlips = [
-    {
-        id: '20250726-001',
-        clientId: 1,
-        date: '2025-07-26',
-        items: [
-            { name: 'ルートビア 355ml缶', code: 'RB-CAN-355', quantity: 24, unit: '本', price: 120 },
-            { name: 'カーリーフライ (冷凍)', code: 'CF-FRZ-1KG', quantity: 10, unit: '袋', price: 800 },
-        ],
-        total: 24 * 120 + 10 * 800,
-    },
-    {
-        id: '20250725-001',
-        clientId: 2,
-        date: '2025-07-25',
-        items: [
-            { name: 'バニラアイスクリーム 4L', code: 'IC-VNL-4L', quantity: 5, unit: '個', price: 2500 },
-        ],
-        total: 5 * 2500,
-    },
-];
-
-// ヘルパー関数: 今日の日付をYYYY-MM-DD形式で取得
-const getTodayDate = () => {
-    const today = new Date();
-    today.setHours(today.getHours() + 9); // JSTに調整
-    return today.toISOString().split('T')[0];
-};
-
-
-// PDFテンプレートコンポーネント
-const PdfTemplate = React.forwardRef(({ slip, client }, ref) => {
-    if (!slip || !client) return null;
-
-    const slipTotal = slip.items.reduce((acc, item) => acc + item.quantity * item.price, 0);
-
-    return (
-        <div ref={ref} className="p-8 bg-white text-black" style={{ width: '210mm', minHeight: '297mm' }}>
-            <div className="border-2 border-black p-4">
-                <header className="flex justify-between items-start mb-4">
-                    <div>
-                        <h1 className="text-3xl font-bold">納品書</h1>
-                        <p className="text-sm mt-2">（控）</p>
-                    </div>
-                    <div className="text-right">
-                        <p>No. {slip.id}</p>
-                        <p>年月日: {slip.date}</p>
-                    </div>
-                </header>
-
-                <div className="mb-4 pb-2 border-b-2 border-black">
-                    <h2 className="text-xl font-bold">{client.name} 御中</h2>
-                </div>
-
-                <div className="flex justify-end mb-4">
-                    <div className="text-center border-2 border-black p-2">
-                        <p className="font-bold">株式会社サンブランド</p>
-                        <p className="text-xs">〒904-0314 沖縄県中頭郡読谷村字楚辺1丁目3-4</p>
-                        <p className="text-xs">TEL: (098) 936-7136 / FAX: (098) 936-7136</p>
-                    </div>
-                </div>
-
-                <table className="w-full border-collapse border border-black text-sm">
-                    <thead>
-                        <tr>
-                            <th className="border border-black p-2 w-2/5">品名</th>
-                            <th className="border border-black p-2 w-1/5">コード</th>
-                            <th className="border border-black p-2 w-1/12">数量</th>
-                            <th className="border border-black p-2 w-1/12">単位</th>
-                            <th className="border border-black p-2 w-1/6">単価</th>
-                            <th className="border border-black p-2 w-1/6">金額</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {slip.items.map((item, index) => (
-                            <tr key={index}>
-                                <td className="border border-black p-2">{item.name}</td>
-                                <td className="border border-black p-2">{item.code}</td>
-                                <td className="border border-black p-2 text-right">{item.quantity.toLocaleString()}</td>
-                                <td className="border border-black p-2">{item.unit}</td>
-                                <td className="border border-black p-2 text-right">{item.price.toLocaleString()}</td>
-                                <td className="border border-black p-2 text-right">{(item.quantity * item.price).toLocaleString()}</td>
-                            </tr>
-                        ))}
-                        {/* 空白行を追加して高さを確保 */}
-                        {Array.from({ length: 10 - slip.items.length }).map((_, i) => (
-                             <tr key={`blank-${i}`}><td className="border border-black p-2 h-8" colSpan="6"></td></tr>
-                        ))}
-                    </tbody>
-                </table>
-
-                <div className="flex justify-end mt-4">
-                    <div className="w-1/3">
-                        <table className="w-full border-collapse border border-black text-sm">
-                            <tbody>
-                                <tr>
-                                    <th className="border border-black p-2">合計金額</th>
-                                    <td className="border border-black p-2 text-right text-lg font-bold">¥ {slipTotal.toLocaleString()}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <div className="mt-4 border border-black p-2 text-xs">
-                    <p>※ 本納品書をもちまして、上記商品を正に納品いたしました。</p>
-                </div>
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>納品書・請求書管理アプリ 取扱説明書</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+            line-height: 1.7;
+        }
+        .feature-card {
+            transition: all 0.3s ease;
+        }
+        .feature-card:hover {
+            transform: translateY(-2px);
+        }
+        .step-number {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .icon-highlight {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="max-w-4xl mx-auto bg-white shadow-lg">
+        <!-- Header -->
+        <header class="bg-gradient-to-r from-blue-600 to-purple-600 text-white py-8 px-8">
+            <div class="text-center">
+                <h1 class="text-4xl font-bold mb-4">
+                    <i class="fas fa-file-invoice mr-3"></i>
+                    納品書・請求書管理アプリ
+                </h1>
+                <h2 class="text-2xl font-light">取扱説明書</h2>
+                <p class="mt-4 text-lg opacity-90">スマートフォン一つで完結する、面倒な伝票管理業務のスマートソリューション</p>
             </div>
-        </div>
-    );
-});
+        </header>
 
-// モーダルコンポーネント
-function Modal({ isOpen, message, onConfirm, onCancel }) {
-    if (!isOpen) return null;
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-            <div className="bg-gray-800 rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl">
-                <p className="text-white mb-6">{message}</p>
-                <div className="flex justify-end gap-3">
-                    <button onClick={onCancel} className="py-2 px-4 bg-gray-600 rounded-md hover:bg-gray-500 font-semibold">
-                        {onConfirm ? 'キャンセル' : '閉じる'}
-                    </button>
-                    {onConfirm && (
-                        <button onClick={onConfirm} className="py-2 px-4 bg-cyan-600 rounded-md hover:bg-cyan-500 font-semibold">
-                            OK
-                        </button>
-                    )}
+        <div class="p-8">
+            <!-- Introduction -->
+            <section class="mb-12">
+                <div class="bg-blue-50 border-l-4 border-blue-500 p-6 rounded-r-lg">
+                    <h2 class="text-2xl font-bold text-gray-800 mb-4">
+                        <i class="fas fa-info-circle text-blue-500 mr-2"></i>
+                        はじめに
+                    </h2>
+                    <p class="text-gray-700 text-lg leading-relaxed">
+                        このアプリは、日々の納品書作成から月々の請求書発行まで、面倒な伝票管理業務をスマートフォン一つで完結させるためのツールです。いつでもどこでも、直感的な操作でビジネスを効率化しましょう。
+                    </p>
                 </div>
-            </div>
-        </div>
-    );
-}
+            </section>
 
-// メインのAppコンポーネント
-export default function App() {
-    const [clients, setClients] = useState([]);
-    const [slips, setSlips] = useState([]);
-    const [activeClientId, setActiveClientId] = useState(null);
-    const [view, setView] = useState('list'); // 'list', 'form', 'clients'
-    const [slipToEdit, setSlipToEdit] = useState(null);
-    const [slipToShare, setSlipToShare] = useState(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [modal, setModal] = useState({ isOpen: false, message: '', onConfirm: null });
-    const [scriptsReady, setScriptsReady] = useState(false);
-    const pdfRef = useRef();
-
-    // 外部スクリプト読み込み
-    useEffect(() => {
-        const loadScript = (src, onReady) => {
-            let script = document.querySelector(`script[src="${src}"]`);
-            if (!script) {
-                script = document.createElement('script');
-                script.src = src;
-                script.async = true;
-                document.body.appendChild(script);
-                script.onload = onReady;
-                script.onerror = () => console.error(`Failed to load script: ${src}`);
-            } else if (script.getAttribute('data-loaded')) {
-                onReady();
-            } else {
-                script.addEventListener('load', onReady);
-            }
-        };
-
-        let loadedCount = 0;
-        const totalScripts = 2;
-        const onScriptReady = (e) => {
-            e.target.setAttribute('data-loaded', 'true');
-            loadedCount++;
-            if (loadedCount === totalScripts) {
-                setScriptsReady(true);
-                console.log('All PDF scripts loaded.');
-            }
-        };
-        
-        loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js', onScriptReady);
-        loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js', onScriptReady);
-    }, []);
-
-    // データ初期化
-    useEffect(() => {
-        try {
-            const storedClients = localStorage.getItem('nohinsho_clients');
-            const storedSlips = localStorage.getItem('nohinsho_slips');
-
-            if (storedClients) {
-                setClients(JSON.parse(storedClients));
-            } else {
-                setClients(initialClients);
-            }
-
-            if (storedSlips) {
-                setSlips(JSON.parse(storedSlips));
-            } else {
-                setSlips(initialSlips);
-            }
-        } catch (error) {
-            console.error("データの読み込みに失敗しました:", error);
-            setClients(initialClients);
-            setSlips(initialSlips);
-        } finally {
-            setIsLoading(false);
-        }
-    }, []);
-    
-    // activeClientIdの初期設定
-    useEffect(() => {
-        if (clients.length > 0 && !activeClientId) {
-            setActiveClientId(clients[0].id);
-        }
-    }, [clients, activeClientId]);
-
-    // データ永続化
-    useEffect(() => {
-        if (!isLoading) {
-            localStorage.setItem('nohinsho_clients', JSON.stringify(clients));
-        }
-    }, [clients, isLoading]);
-
-    useEffect(() => {
-        if (!isLoading) {
-            localStorage.setItem('nohinsho_slips', JSON.stringify(slips));
-        }
-    }, [slips, isLoading]);
-
-    const handleAddSlip = () => {
-        setSlipToEdit(null);
-        setView('form');
-    };
-
-    const handleEditSlip = (slip) => {
-        setSlipToEdit(slip);
-        setView('form');
-    };
-
-    const handleDeleteSlip = (slipId) => {
-        setModal({
-            isOpen: true,
-            message: 'この納品書を本当に削除しますか？',
-            onConfirm: () => {
-                setSlips(slips.filter(s => s.id !== slipId));
-                setModal({ isOpen: false });
-            }
-        });
-    };
-
-    const handleSaveSlip = (slipData) => {
-        if (slipToEdit) {
-            setSlips(slips.map(s => s.id === slipData.id ? slipData : s));
-        } else {
-            setSlips([slipData, ...slips]);
-        }
-        setView('list');
-    };
-
-    const handleShareSlip = async (slip) => {
-        if (!scriptsReady) {
-            setModal({ isOpen: true, message: 'PDF生成ライブラリを読み込み中です。しばらくしてからもう一度お試しください。' });
-            return;
-        }
-
-        setSlipToShare(slip);
-        setTimeout(async () => {
-            if (!pdfRef.current) {
-                console.error("PDFコンポーネントがありません。");
-                return;
-            }
-            try {
-                const { jsPDF } = window.jspdf;
-                const html2canvas = window.html2canvas;
-
-                const canvas = await html2canvas(pdfRef.current, { scale: 2 });
-                const imgData = canvas.toDataURL('image/png');
-                const pdf = new jsPDF('p', 'mm', 'a4');
-                const pdfWidth = pdf.internal.pageSize.getWidth();
-                const pdfHeight = pdf.internal.pageSize.getHeight();
-                pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+            <!-- Basic Usage -->
+            <section class="mb-12">
+                <h2 class="text-3xl font-bold text-gray-800 mb-8 border-b-3 border-purple-500 pb-3">
+                    <i class="fas fa-play-circle text-purple-500 mr-3"></i>
+                    基本的な使い方
+                </h2>
+                <p class="text-gray-700 mb-8 text-lg">アプリの主な機能は、画面下部のナビゲーションバーに集約されています。</p>
                 
-                const pdfBlob = pdf.getBlob();
-                const pdfFile = new File([pdfBlob], `納品書_${slip.id}.pdf`, { type: 'application/pdf' });
-
-                if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
-                    await navigator.share({
-                        title: `納品書 ${slip.id}`,
-                        text: `${clients.find(c => c.id === slip.clientId)?.name}様への納品書です。`,
-                        files: [pdfFile],
-                    });
-                } else {
-                    const downloadUrl = URL.createObjectURL(pdfBlob);
-                    const a = document.createElement('a');
-                    a.href = downloadUrl;
-                    a.download = `納品書_${slip.id}.pdf`;
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
-                    setModal({ isOpen: true, message: 'お使いのブラウザは共有機能に対応していません。PDFをダウンロードしました。' });
-                }
-            } catch (error) {
-                console.error('PDFの生成または共有に失敗しました:', error);
-                setModal({ isOpen: true, message: 'PDFの生成または共有に失敗しました。' });
-            } finally {
-                setSlipToShare(null);
-            }
-        }, 100);
-    };
-    
-    const filteredSlips = slips.filter(s => s.clientId === activeClientId);
-
-    if (isLoading) {
-        return <div className="flex items-center justify-center h-screen bg-gray-900 text-white"><Loader className="animate-spin mr-2" /> Loading...</div>;
-    }
-
-    return (
-        <div className="bg-gray-900 text-white min-h-screen font-sans">
-             <Modal 
-                isOpen={modal.isOpen} 
-                message={modal.message} 
-                onConfirm={modal.onConfirm} 
-                onCancel={() => setModal({ isOpen: false })} 
-            />
-            <div className="container mx-auto max-w-4xl p-4">
-                <header className="flex justify-between items-center mb-4">
-                    <h1 className="text-2xl font-bold text-cyan-400">納品書管理</h1>
-                    <div className="flex gap-2">
-                        <button onClick={() => setView('clients')} className="p-2 bg-gray-700 rounded-full hover:bg-gray-600"><Users size={20} /></button>
-                        <button onClick={() => setView('list')} className="p-2 bg-gray-700 rounded-full hover:bg-gray-600"><List size={20} /></button>
-                        <button onClick={handleAddSlip} className="p-2 bg-cyan-500 rounded-full hover:bg-cyan-400"><FilePlus size={20} /></button>
-                    </div>
-                </header>
-
-                {view === 'list' && (
-                    <ClientTabs clients={clients} activeClientId={activeClientId} setActiveClientId={setActiveClientId} />
-                )}
-
-                <main>
-                    {view === 'list' && <DeliverySlipList slips={filteredSlips} onEdit={handleEditSlip} onDelete={handleDeleteSlip} onShare={handleShareSlip} scriptsReady={scriptsReady} />}
-                    {view === 'form' && <DeliverySlipForm clients={clients} activeClientId={activeClientId} onSave={handleSaveSlip} onCancel={() => setView('list')} slipToEdit={slipToEdit} slips={slips} />}
-                    {view === 'clients' && <ClientManager clients={clients} setClients={setClients} setModal={setModal} />}
-                </main>
-            </div>
-            <div style={{ position: 'absolute', left: '-9999px', top: 0 }}>
-                <PdfTemplate ref={pdfRef} slip={slipToShare} client={clients.find(c => c.id === slipToShare?.clientId)} />
-            </div>
-        </div>
-    );
-}
-
-// 取引先タブコンポーネント
-function ClientTabs({ clients, activeClientId, setActiveClientId }) {
-    if (!clients || clients.length === 0) {
-        return <div className="text-center p-4 bg-gray-800 rounded-lg">取引先が登録されていません。</div>;
-    }
-    return (
-        <div className="mb-4 overflow-x-auto whitespace-nowrap pb-2">
-            {clients.map(client => (
-                <button
-                    key={client.id}
-                    onClick={() => setActiveClientId(client.id)}
-                    className={`px-4 py-2 mr-2 rounded-full text-sm font-semibold ${activeClientId === client.id ? 'bg-cyan-500 text-white' : 'bg-gray-700 text-gray-300'}`}
-                >
-                    {client.name}
-                </button>
-            ))}
-        </div>
-    );
-}
-
-// 納品書リストコンポーネント
-function DeliverySlipList({ slips, onEdit, onDelete, onShare, scriptsReady }) {
-    const [expandedSlip, setExpandedSlip] = useState(null);
-
-    const toggleExpand = (id) => {
-        setExpandedSlip(expandedSlip === id ? null : id);
-    };
-
-    if (slips.length === 0) {
-        return <div className="text-center p-8 bg-gray-800 rounded-lg">この取引先の納品書はありません。</div>;
-    }
-
-    return (
-        <div className="space-y-3">
-            {slips.sort((a, b) => new Date(b.date) - new Date(a.date)).map(slip => (
-                <div key={slip.id} className="bg-gray-800 rounded-lg p-4 shadow-md">
-                    <div className="flex justify-between items-center cursor-pointer" onClick={() => toggleExpand(slip.id)}>
-                        <div>
-                            <p className="font-bold">{slip.date}</p>
-                            <p className="text-sm text-gray-400">No: {slip.id}</p>
+                <div class="grid md:grid-cols-2 gap-6 mb-8">
+                    <!-- Navigation Icons -->
+                    <div class="bg-white border border-gray-200 rounded-lg p-6 feature-card shadow-md">
+                        <div class="flex items-center mb-4">
+                            <div class="icon-highlight w-12 h-12 rounded-full flex items-center justify-center mr-4">
+                                <i class="fas fa-list text-white text-lg"></i>
+                            </div>
+                            <h3 class="text-xl font-semibold text-gray-800">納品書</h3>
                         </div>
-                        <div className="text-right">
-                            <p className="font-bold text-lg text-cyan-400">¥{slip.total.toLocaleString()}</p>
-                            {expandedSlip === slip.id ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-                        </div>
+                        <p class="text-gray-600">納品書の作成や、過去の納品書の一覧を確認できます。</p>
                     </div>
-                    {expandedSlip === slip.id && (
-                        <div className="mt-4 pt-4 border-t border-gray-700">
-                            <h4 className="font-semibold mb-2">品目:</h4>
-                            <ul className="space-y-1 text-sm">
-                                {slip.items.map((item, index) => (
-                                    <li key={index} className="flex justify-between">
-                                        <span>{item.name} ({item.quantity}{item.unit})</span>
-                                        <span>¥{(item.price * item.quantity).toLocaleString()}</span>
-                                    </li>
-                                ))}
-                            </ul>
-                            <div className="flex justify-end gap-2 mt-4">
-                                <button 
-                                    onClick={(e) => { e.stopPropagation(); onShare(slip); }} 
-                                    className={`p-2 bg-green-600 rounded-full transition-opacity ${!scriptsReady ? 'opacity-50 cursor-not-allowed' : 'hover:bg-green-500'}`}
-                                    disabled={!scriptsReady}
-                                >
-                                    <Share2 size={16} />
-                                </button>
-                                <button onClick={(e) => { e.stopPropagation(); onEdit(slip); }} className="p-2 bg-blue-600 rounded-full hover:bg-blue-500"><FileText size={16} /></button>
-                                <button onClick={(e) => { e.stopPropagation(); onDelete(slip.id); }} className="p-2 bg-red-600 rounded-full hover:bg-red-500"><Trash2 size={16} /></button>
+
+                    <div class="bg-white border border-gray-200 rounded-lg p-6 feature-card shadow-md">
+                        <div class="flex items-center mb-4">
+                            <div class="icon-highlight w-12 h-12 rounded-full flex items-center justify-center mr-4">
+                                <i class="fas fa-dollar-sign text-white text-lg"></i>
+                            </div>
+                            <h3 class="text-xl font-semibold text-gray-800">請求書</h3>
+                        </div>
+                        <p class="text-gray-600">月ごとに納品書を集計し、請求書を作成・管理します。</p>
+                    </div>
+
+                    <div class="bg-white border border-gray-200 rounded-lg p-6 feature-card shadow-md">
+                        <div class="flex items-center mb-4">
+                            <div class="icon-highlight w-12 h-12 rounded-full flex items-center justify-center mr-4">
+                                <i class="fas fa-users text-white text-lg"></i>
+                            </div>
+                            <h3 class="text-xl font-semibold text-gray-800">取引先</h3>
+                        </div>
+                        <p class="text-gray-600">納品先となるお客様の情報を登録・管理します。</p>
+                    </div>
+
+                    <div class="bg-white border border-gray-200 rounded-lg p-6 feature-card shadow-md">
+                        <div class="flex items-center mb-4">
+                            <div class="icon-highlight w-12 h-12 rounded-full flex items-center justify-center mr-4">
+                                <i class="fas fa-plus text-white text-lg"></i>
+                            </div>
+                            <h3 class="text-xl font-semibold text-gray-800">新規作成</h3>
+                        </div>
+                        <p class="text-gray-600">新しい納品書をすばやく作成するためのショートカットです。</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Detailed Functions -->
+            <section class="mb-12">
+                <h2 class="text-3xl font-bold text-gray-800 mb-8 border-b-3 border-green-500 pb-3">
+                    <i class="fas fa-cogs text-green-500 mr-3"></i>
+                    各機能の使い方
+                </h2>
+
+                <!-- Customer Registration -->
+                <div class="mb-10">
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-6 mb-6">
+                        <h3 class="text-2xl font-bold text-red-800 mb-4">
+                            <i class="fas fa-exclamation-triangle text-red-600 mr-2"></i>
+                            【重要】最初に取引先を登録しよう
+                        </h3>
+                        <p class="text-red-700 text-lg">納品書を作成する前に、まず納品先となるお客様の情報を登録します。</p>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div class="flex items-start">
+                            <div class="step-number w-8 h-8 rounded-full flex items-center justify-center text-white font-bold mr-4 mt-1">1</div>
+                            <div class="flex-1">
+                                <p class="text-gray-700">ナビゲーションバーの「<i class="fas fa-users text-blue-500 mx-1"></i><strong>取引先</strong>」をタップします。</p>
                             </div>
                         </div>
-                    )}
-                </div>
-            ))}
-        </div>
-    );
-}
-
-// 納品書作成・編集フォーム
-function DeliverySlipForm({ clients, activeClientId, onSave, onCancel, slipToEdit, slips }) {
-    const [date, setDate] = useState(getTodayDate());
-    const [clientId, setClientId] = useState(activeClientId);
-    const [items, setItems] = useState([{ name: '', code: '', quantity: '', unit: '個', price: '' }]);
-
-    useEffect(() => {
-        if (slipToEdit) {
-            setDate(slipToEdit.date);
-            setClientId(slipToEdit.clientId);
-            setItems(slipToEdit.items.map(item => ({ ...item })));
-        }
-    }, [slipToEdit]);
-
-    const handleItemChange = (index, field, value) => {
-        const newItems = [...items];
-        newItems[index][field] = value;
-        setItems(newItems);
-    };
-
-    const addItem = () => {
-        setItems([...items, { name: '', code: '', quantity: '', unit: '個', price: '' }]);
-    };
-
-    const removeItem = (index) => {
-        const newItems = items.filter((_, i) => i !== index);
-        setItems(newItems);
-    };
-
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        const total = items.reduce((sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.price) || 0), 0);
-        
-        let slipId;
-        if (slipToEdit) {
-            slipId = slipToEdit.id;
-        } else {
-            const today = getTodayDate().replace(/-/g, '');
-            const todaySlips = slips.filter(s => s.id.startsWith(today));
-            const newIndex = (todaySlips.length + 1).toString().padStart(3, '0');
-            slipId = `${today}-${newIndex}`;
-        }
-
-        onSave({
-            id: slipId,
-            clientId: Number(clientId),
-            date,
-            items: items.map(item => ({
-                ...item,
-                quantity: Number(item.quantity),
-                price: Number(item.price)
-            })).filter(item => item.name && item.quantity > 0 && item.price >= 0),
-            total
-        });
-    };
-
-    return (
-        <div className="bg-gray-800 p-4 rounded-lg">
-            <form onSubmit={handleSubmit} className="space-y-4">
-                <h2 className="text-xl font-bold mb-4">{slipToEdit ? '納品書編集' : '新規納品書作成'}</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-400">納入日</label>
-                        <input type="date" value={date} onChange={e => setDate(e.target.value)} className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm p-2" required />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-400">取引先</label>
-                        <select value={clientId} onChange={e => setClientId(e.target.value)} className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm p-2" required>
-                            {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
-                    </div>
-                </div>
-
-                <div className="space-y-3">
-                    <h3 className="font-semibold">品目</h3>
-                    {items.map((item, index) => (
-                        <div key={index} className="bg-gray-700 p-3 rounded-md space-y-2 relative">
-                            <button type="button" onClick={() => removeItem(index)} className="absolute top-2 right-2 text-red-400 hover:text-red-300"><X size={16} /></button>
-                            <input type="text" placeholder="品名" value={item.name} onChange={e => handleItemChange(index, 'name', e.target.value)} className="w-full bg-gray-600 p-2 rounded-md" required />
-                            <div className="grid grid-cols-2 gap-2">
-                                <input type="text" placeholder="コード" value={item.code} onChange={e => handleItemChange(index, 'code', e.target.value)} className="bg-gray-600 p-2 rounded-md" />
-                                <input type="text" placeholder="単位" value={item.unit} onChange={e => handleItemChange(index, 'unit', e.target.value)} className="bg-gray-600 p-2 rounded-md" required />
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                                <input type="number" placeholder="数量" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', e.target.value)} className="bg-gray-600 p-2 rounded-md" required />
-                                <input type="number" placeholder="単価" value={item.price} onChange={e => handleItemChange(index, 'price', e.target.value)} className="bg-gray-600 p-2 rounded-md" required />
+                        <div class="flex items-start">
+                            <div class="step-number w-8 h-8 rounded-full flex items-center justify-center text-white font-bold mr-4 mt-1">2</div>
+                            <div class="flex-1">
+                                <p class="text-gray-700">「新しい取引先名」の欄にお客様の会社名などを入力し、「追加」ボタンを押します。</p>
                             </div>
                         </div>
-                    ))}
-                    <button type="button" onClick={addItem} className="w-full py-2 px-4 border border-dashed border-gray-500 text-gray-400 rounded-md hover:bg-gray-700">品目を追加</button>
+                        <div class="flex items-start">
+                            <div class="step-number w-8 h-8 rounded-full flex items-center justify-center text-white font-bold mr-4 mt-1">3</div>
+                            <div class="flex-1">
+                                <p class="text-gray-700">登録済みの取引先が一覧で表示されます。削除したい場合は、右側の<i class="fas fa-trash text-red-500 mx-1"></i>アイコンをタップしてください。</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
-                <div className="flex justify-end gap-3 pt-4">
-                    <button type="button" onClick={onCancel} className="py-2 px-4 bg-gray-600 rounded-md hover:bg-gray-500">キャンセル</button>
-                    <button type="submit" className="py-2 px-4 bg-cyan-600 rounded-md hover:bg-cyan-500">保存</button>
+                <!-- Delivery Note Creation -->
+                <div class="mb-10">
+                    <h3 class="text-2xl font-bold text-gray-800 mb-6">
+                        <i class="fas fa-file-alt text-blue-500 mr-2"></i>
+                        納品書を作成・管理する
+                    </h3>
+                    <p class="text-gray-600 mb-6 text-lg">日々の納品業務で使います。</p>
+
+                    <div class="bg-blue-50 rounded-lg p-6 mb-6">
+                        <h4 class="text-lg font-semibold text-blue-800 mb-4">📝 納品書の新規作成</h4>
+                        <div class="space-y-4">
+                            <div class="flex items-start">
+                                <div class="step-number w-8 h-8 rounded-full flex items-center justify-center text-white font-bold mr-4 mt-1">1</div>
+                                <div class="flex-1">
+                                    <p class="text-gray-700">ナビゲーションバーの「<i class="fas fa-plus text-green-500 mx-1"></i><strong>新規作成</strong>」をタップします。</p>
+                                </div>
+                            </div>
+                            <div class="flex items-start">
+                                <div class="step-number w-8 h-8 rounded-full flex items-center justify-center text-white font-bold mr-4 mt-1">2</div>
+                                <div class="flex-1">
+                                    <p class="text-gray-700">納入日と取引先を選択します。</p>
+                                </div>
+                            </div>
+                            <div class="flex items-start">
+                                <div class="step-number w-8 h-8 rounded-full flex items-center justify-center text-white font-bold mr-4 mt-1">3</div>
+                                <div class="flex-1">
+                                    <p class="text-gray-700"><strong>納品書No.</strong>は、空欄のままにしておくと「日付-連番」の形式で自動採番されます。もちろん、任意の番号を手で入力することも可能です。</p>
+                                </div>
+                            </div>
+                            <div class="flex items-start">
+                                <div class="step-number w-8 h-8 rounded-full flex items-center justify-center text-white font-bold mr-4 mt-1">4</div>
+                                <div class="flex-1">
+                                    <p class="text-gray-700">「品目を追加」ボタンで、納品する商品の情報を入力していきます。数量と単価を入力すると、金額は自動で計算されます。</p>
+                                </div>
+                            </div>
+                            <div class="flex items-start">
+                                <div class="step-number w-8 h-8 rounded-full flex items-center justify-center text-white font-bold mr-4 mt-1">5</div>
+                                <div class="flex-1">
+                                    <p class="text-gray-700">すべて入力したら「保存」をタップします。</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-green-50 rounded-lg p-6">
+                        <h4 class="text-lg font-semibold text-green-800 mb-4">📋 作成した納品書の確認・編集</h4>
+                        <div class="space-y-4">
+                            <p class="text-gray-700">「<i class="fas fa-list text-blue-500 mx-1"></i><strong>納品書</strong>」画面で、上部のタブから取引先を切り替えて納品履歴を確認できます。</p>
+                            <p class="text-gray-700 mb-4">各納品書をタップすると詳細が開き、以下の操作ができます：</p>
+                            
+                            <div class="grid md:grid-cols-2 gap-4">
+                                <div class="flex items-center p-3 bg-white rounded-lg border">
+                                    <i class="fas fa-share text-blue-500 text-lg mr-3"></i>
+                                    <div>
+                                        <p class="font-semibold text-gray-800">共有</p>
+                                        <p class="text-sm text-gray-600">PDFをLINEやメールで送信</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center p-3 bg-white rounded-lg border">
+                                    <i class="fas fa-download text-green-500 text-lg mr-3"></i>
+                                    <div>
+                                        <p class="font-semibold text-gray-800">ダウンロード</p>
+                                        <p class="text-sm text-gray-600">PDFを直接デバイスに保存</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center p-3 bg-white rounded-lg border">
+                                    <i class="fas fa-edit text-orange-500 text-lg mr-3"></i>
+                                    <div>
+                                        <p class="font-semibold text-gray-800">編集</p>
+                                        <p class="text-sm text-gray-600">内容を修正</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center p-3 bg-white rounded-lg border">
+                                    <i class="fas fa-trash text-red-500 text-lg mr-3"></i>
+                                    <div>
+                                        <p class="font-semibold text-gray-800">削除</p>
+                                        <p class="text-sm text-gray-600">納品書を削除</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </form>
+
+                <!-- Invoice Creation -->
+                <div class="mb-10">
+                    <h3 class="text-2xl font-bold text-gray-800 mb-6">
+                        <i class="fas fa-file-invoice-dollar text-purple-500 mr-2"></i>
+                        請求書を作成・管理する
+                    </h3>
+                    <p class="text-gray-600 mb-6 text-lg">月末の締め作業で使います。</p>
+
+                    <div class="bg-purple-50 rounded-lg p-6 mb-6">
+                        <h4 class="text-lg font-semibold text-purple-800 mb-4">💰 請求書の作成手順</h4>
+                        <div class="space-y-4">
+                            <div class="flex items-start">
+                                <div class="step-number w-8 h-8 rounded-full flex items-center justify-center text-white font-bold mr-4 mt-1">1</div>
+                                <div class="flex-1">
+                                    <p class="text-gray-700">ナビゲーションバーの「<i class="fas fa-dollar-sign text-purple-500 mx-1"></i><strong>請求書</strong>」をタップします。</p>
+                                </div>
+                            </div>
+                            <div class="flex items-start">
+                                <div class="step-number w-8 h-8 rounded-full flex items-center justify-center text-white font-bold mr-4 mt-1">2</div>
+                                <div class="flex-1">
+                                    <p class="text-gray-700">画面上部で請求対象の月を選択します（例: 2025年7月）。</p>
+                                </div>
+                            </div>
+                            <div class="flex items-start">
+                                <div class="step-number w-8 h-8 rounded-full flex items-center justify-center text-white font-bold mr-4 mt-1">3</div>
+                                <div class="flex-1">
+                                    <p class="text-gray-700">その月に納品履歴があり、まだ請求書を作成していない取引先が「今月請求可能な取引先」に一覧で表示されます。</p>
+                                </div>
+                            </div>
+                            <div class="flex items-start">
+                                <div class="step-number w-8 h-8 rounded-full flex items-center justify-center text-white font-bold mr-4 mt-1">4</div>
+                                <div class="flex-1">
+                                    <p class="text-gray-700">請求書を作成したい取引先の「請求書を作成」ボタンを押します。</p>
+                                </div>
+                            </div>
+                            <div class="flex items-start">
+                                <div class="step-number w-8 h-8 rounded-full flex items-center justify-center text-white font-bold mr-4 mt-1">5</div>
+                                <div class="flex-1">
+                                    <p class="text-gray-700">「発行済み請求書」の欄に、作成された請求書が表示されます。</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-yellow-50 rounded-lg p-6">
+                        <h4 class="text-lg font-semibold text-yellow-800 mb-4">📊 発行した請求書の操作</h4>
+                        <div class="grid md:grid-cols-3 gap-4">
+                            <div class="flex items-center p-4 bg-white rounded-lg border border-yellow-200">
+                                <i class="fas fa-share text-blue-500 text-xl mr-3"></i>
+                                <div>
+                                    <p class="font-semibold text-gray-800">共有</p>
+                                    <p class="text-sm text-gray-600">請求書PDFを出力</p>
+                                </div>
+                            </div>
+                            <div class="flex items-center p-4 bg-white rounded-lg border border-yellow-200">
+                                <i class="fas fa-download text-green-500 text-xl mr-3"></i>
+                                <div>
+                                    <p class="font-semibold text-gray-800">ダウンロード</p>
+                                    <p class="text-sm text-gray-600">請求書PDFを保存</p>
+                                </div>
+                            </div>
+                            <div class="flex items-center p-4 bg-white rounded-lg border border-yellow-200">
+                                <i class="fas fa-check-circle text-green-600 text-xl mr-3"></i>
+                                <div>
+                                    <p class="font-semibold text-gray-800">支払済にする</p>
+                                    <p class="text-sm text-gray-600">入金確認後にステータス変更</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-4 p-3 bg-yellow-100 rounded border-l-4 border-yellow-500">
+                            <p class="text-sm text-yellow-800">
+                                <i class="fas fa-info-circle mr-2"></i>
+                                お客様からの入金が確認できたら、「支払済にする」ボタンでステータスを「支払済」に変更できます。
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Footer -->
+            <footer class="text-center py-8 border-t border-gray-200">
+                <div class="text-gray-600">
+                    <p class="text-lg mb-2">🚀 効率的なビジネス管理を、スマートフォン一つで実現しましょう</p>
+                    <p class="text-sm">このアプリで、あなたのビジネスがよりスマートになることを願っています。</p>
+                </div>
+            </footer>
         </div>
-    );
-}
-
-// 取引先管理画面
-function ClientManager({ clients, setClients, setModal }) {
-    const [newClientName, setNewClientName] = useState('');
-
-    const handleAddClient = (e) => {
-        e.preventDefault();
-        if (newClientName.trim() === '') return;
-        const newClient = {
-            id: Date.now(),
-            name: newClientName.trim()
-        };
-        setClients([...clients, newClient]);
-        setNewClientName('');
-    };
-
-    const handleDeleteClient = (id) => {
-        setModal({
-            isOpen: true,
-            message: 'この取引先を削除しますか？関連する納品書は削除されません。',
-            onConfirm: () => {
-                setClients(clients.filter(c => c.id !== id));
-                setModal({ isOpen: false });
-            }
-        });
-    };
-
-    return (
-        <div className="bg-gray-800 p-4 rounded-lg">
-            <h2 className="text-xl font-bold mb-4">取引先管理</h2>
-            <form onSubmit={handleAddClient} className="flex gap-2 mb-4">
-                <input
-                    type="text"
-                    value={newClientName}
-                    onChange={(e) => setNewClientName(e.target.value)}
-                    placeholder="新しい取引先名"
-                    className="flex-grow bg-gray-700 border-gray-600 rounded-md shadow-sm p-2"
-                />
-                <button type="submit" className="py-2 px-4 bg-cyan-600 rounded-md hover:bg-cyan-500">追加</button>
-            </form>
-            <ul className="space-y-2">
-                {clients.map(client => (
-                    <li key={client.id} className="flex justify-between items-center bg-gray-700 p-3 rounded-md">
-                        <span>{client.name}</span>
-                        <button onClick={() => handleDeleteClient(client.id)} className="text-red-400 hover:text-red-300">
-                            <Trash2 size={18} />
-                        </button>
-                    </li>
-                ))}
-            </ul>
-        </div>
-    );
-}
+    </div>
+</body>
+</html>
